@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mis Tareas</title>
+<style>
+:root{
+  --bg:#f3f4f8; --card:#fff; --text:#1f2430; --muted:#7a8194; --line:#e6e8ef;
+  --accent:#5b5bd6; --accent-2:#8b5cf6; --danger:#e5484d; --ok:#2f9e6b;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#14161d; --card:#1d2029; --text:#eceef4; --muted:#9097ab; --line:#2b2f3b; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  min-height:100vh;display:flex;justify-content:center;padding:2rem 1rem}
+.app{width:100%;max-width:680px}
+header{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;border-radius:16px 16px 0 0;padding:1.5rem 1.5rem 1.25rem}
+header h1{margin:0;font-size:1.6rem}
+header p{margin:.25rem 0 0;opacity:.85;font-size:.95rem}
+main{background:var(--card);border-radius:0 0 16px 16px;padding:1.25rem 1.5rem 1.5rem;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+.nueva{display:grid;gap:.5rem;margin-bottom:1rem}
+input[type=text]{width:100%;padding:.7rem .85rem;border:1px solid var(--line);border-radius:10px;
+  background:transparent;color:var(--text);font:inherit}
+input[type=text]:focus{outline:2px solid var(--accent);outline-offset:1px}
+button{font:inherit;cursor:pointer;border:0;border-radius:10px}
+.btn-add{background:var(--accent);color:#fff;padding:.7rem 1rem;font-weight:600}
+.btn-add:hover{filter:brightness(1.1)}
+.barra{display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem}
+.filtros{display:flex;gap:.35rem}
+.filtros button{background:transparent;color:var(--muted);padding:.35rem .8rem;border:1px solid var(--line)}
+.filtros button.activo{background:var(--accent);border-color:var(--accent);color:#fff}
+#contador{color:var(--muted);font-size:.9rem}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;gap:.75rem;align-items:flex-start;padding:.85rem .25rem;border-bottom:1px solid var(--line)}
+li:last-child{border-bottom:0}
+li input[type=checkbox]{width:1.2rem;height:1.2rem;margin-top:.2rem;accent-color:var(--ok);cursor:pointer}
+.texto{flex:1;min-width:0}
+.titulo{font-weight:600;word-break:break-word}
+.desc{color:var(--muted);font-size:.9rem;margin-top:.15rem;word-break:break-word}
+li.hecha .titulo{text-decoration:line-through;color:var(--muted)}
+.acciones{display:flex;gap:.25rem}
+.icono{background:transparent;color:var(--muted);padding:.3rem .5rem;font-size:1rem}
+.icono:hover{background:var(--line);color:var(--text)}
+.icono.borrar:hover{color:var(--danger)}
+.edicion{display:grid;gap:.4rem}
+.edicion .fila{display:flex;gap:.4rem}
+.guardar{background:var(--ok);color:#fff;padding:.4rem .8rem}
+.cancelar{background:var(--line);color:var(--text);padding:.4rem .8rem}
+.vacio{text-align:center;color:var(--muted);padding:2rem 0}
+#error{display:none;background:rgba(229,72,77,.12);color:var(--danger);padding:.6rem .8rem;border-radius:10px;margin-bottom:.75rem;font-size:.9rem}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1> Mis Tareas</h1>
+    <p></p>
+  </header>
+  <main>
+    <div id="error"></div>
+    <div class="nueva">
+      <input type="text" id="titulo" placeholder="Qué necesitas hacer?" maxlength="120">
+      <input type="text" id="descripcion" placeholder="Descripción (opcional)" maxlength="300">
+      <button class="btn-add" id="agregar">Agregar tarea</button>
+    </div>
+
+    <div class="barra">
+      <div class="filtros">
+        <button data-f="todas" class="activo">Todas</button>
+        <button data-f="pendientes">Pendientes</button>
+        <button data-f="hechas">Hechas</button>
+      </div>
+      <span id="contador"></span>
+    </div>
+
+    <ul id="lista"></ul>
+    <div id="vacio" class="vacio" hidden>No hay tareas aquí todavía </div>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let tareas = [];
+let filtro = 'todas';
+let editando = null;
+
+async function api(url, opciones) {
+  const r = await fetch(url, opciones);
+  if (!r.ok) {
+    let msg = 'Ocurrió un error';
+    try { msg = (await r.json()).error || msg; } catch {}
+    throw new Error(msg);
+  }
+  return r.status === 204 ? null : r.json();
+}
+const json = (metodo, datos) => ({
+  method: metodo, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(datos)
+});
+function mostrarError(msg) {
+  const e = $('error'); e.textContent = msg; e.style.display = 'block';
+  setTimeout(() => e.style.display = 'none', 3500);
+}
+async function cargar() {
+  try { tareas = await api('/api/tareas'); render(); }
+  catch (e) { mostrarError(e.message); }
+}
+
+function crearEl(tag, clase, texto) {
+  const el = document.createElement(tag);
+  if (clase) el.className = clase;
+  if (texto !== undefined) el.textContent = texto;
+  return el;
+}
+
+function render() {
+  const visibles = tareas.filter(t =>
+    filtro === 'todas' ? true : filtro === 'hechas' ? t.completada : !t.completada);
+  const pendientes = tareas.filter(t => !t.completada).length;
+  $('contador').textContent = `${pendientes} pendiente${pendientes === 1 ? '' : 's'} · ${tareas.length} en total`;
+  $('vacio').hidden = visibles.length > 0;
+
+  const ul = $('lista'); ul.innerHTML = '';
+  visibles.forEach(t => ul.appendChild(t.id === editando ? filaEdicion(t) : fila(t)));
+}
+
+function fila(t) {
+  const li = crearEl('li', t.completada ? 'hecha' : '');
+  const chk = crearEl('input'); chk.type = 'checkbox'; chk.checked = t.completada;
+  chk.onchange = () => cambiar(t.id, {completada: chk.checked});
+
+  const texto = crearEl('div', 'texto');
+  texto.appendChild(crearEl('div', 'titulo', t.titulo));
+  if (t.descripcion) texto.appendChild(crearEl('div', 'desc', t.descripcion));
+
+  const acc = crearEl('div', 'acciones');
+  const ed = crearEl('button', 'icono', '✏️'); ed.title = 'Editar';
+  ed.onclick = () => { editando = t.id; render(); };
+  const del = crearEl('button', 'icono borrar', '🗑️'); del.title = 'Eliminar';
+  del.onclick = () => eliminar(t.id);
+  acc.append(ed, del);
+
+  li.append(chk, texto, acc);
+  return li;
+}
+
+function filaEdicion(t) {
+  const li = crearEl('li');
+  const box = crearEl('div', 'texto edicion');
+  const inT = crearEl('input'); inT.type = 'text'; inT.value = t.titulo; inT.maxLength = 120;
+  const inD = crearEl('input'); inD.type = 'text'; inD.value = t.descripcion || ''; inD.maxLength = 300;
+  inD.placeholder = 'Descripción (opcional)';
+  const fila = crearEl('div', 'fila');
+  const ok = crearEl('button', 'guardar', 'Guardar');
+  const no = crearEl('button', 'cancelar', 'Cancelar');
+  const guardar = () => cambiar(t.id, {titulo: inT.value, descripcion: inD.value});
+  ok.onclick = guardar;
+  no.onclick = () => { editando = null; render(); };
+  [inT, inD].forEach(i => i.onkeydown = e => {
+    if (e.key === 'Enter') guardar();
+    if (e.key === 'Escape') no.onclick();
+  });
+  fila.append(ok, no);
+  box.append(inT, inD, fila);
+  li.appendChild(box);
+  setTimeout(() => inT.focus(), 0);
+  return li;
+}
+
+async function crear() {
+  const titulo = $('titulo').value.trim();
+  if (!titulo) { mostrarError('Escribe un título para la tarea'); return; }
+  try {
+    await api('/api/tareas', json('POST', {titulo, descripcion: $('descripcion').value.trim()}));
+    $('titulo').value = ''; $('descripcion').value = '';
+    $('titulo').focus(); cargar();
+  } catch (e) { mostrarError(e.message); }
+}
+async function cambiar(id, datos) {
+  try { await api('/api/tareas/' + id, json('PUT', datos)); editando = null; cargar(); }
+  catch (e) { mostrarError(e.message); }
+}
+async function eliminar(id) {
+  if (!confirm('¿Eliminar esta tarea?')) return;
+  try { await api('/api/tareas/' + id, {method: 'DELETE'}); cargar(); }
+  catch (e) { mostrarError(e.message); }
+}
+
+$('agregar').onclick = crear;
+['titulo', 'descripcion'].forEach(id => $(id).onkeydown = e => { if (e.key === 'Enter') crear(); });
+document.querySelectorAll('.filtros button').forEach(b => b.onclick = () => {
+  filtro = b.dataset.f;
+  document.querySelectorAll('.filtros button').forEach(x => x.classList.toggle('activo', x === b));
+  render();
+});
+cargar();
+</script>
+</body>
+</html>
