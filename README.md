@@ -1,6 +1,5 @@
 # CRUD de Tareas (C# / ASP.NET Core)
 
-API REST con ASP.NET Core 10 (minimal API) + SQLite para gestionar tareas (Programación III, Tarea 3).
 
 ## Requisitos
 - .NET SDK 10.0 o superior
